@@ -1,0 +1,13 @@
+---
+title: "happiness index starter"
+author: "Calvin Peloso"
+date: "2025-11-20"
+output: html_document
+---
+
+```{r}
+happiness <- read.csv("World Happiness Report 2005-2021.csv")
+timeladder <- lm(Life.Ladder~Year+Log.GDP.per.capita+Social.support+Healthy.life.expectancy.at.birth+Freedom.to.make.life.choices+Generosity+Perceptions.of.corruption+Positive.affect+Negative.affect+Confidence.in.national.government,data=happiness)
+summary(timeladder)
+qqnorm(timeladder$residuals)
+```
