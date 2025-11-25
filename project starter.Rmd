@@ -5,9 +5,77 @@ date: "2025-11-20"
 output: html_document
 ---
 
-```{r}
-happiness <- read.csv("World Happiness Report 2005-2021.csv")
-timeladder <- lm(Life.Ladder~Year+Log.GDP.per.capita+Social.support+Healthy.life.expectancy.at.birth+Freedom.to.make.life.choices+Generosity+Perceptions.of.corruption+Positive.affect+Negative.affect+Confidence.in.national.government,data=happiness)
-summary(timeladder)
-qqnorm(timeladder$residuals)
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(olsrr)
+library(car)
+library(psych)
 ```
+
+```{r Base Model Building and Diagnostics}
+#Country: the name of the country
+#Year: the year of the report (from 2005 to 2021)
+#Life Ladder
+#GDP per capita: the gross domestic product per capita in purchasing power parity (PPP) adjusted dollars.
+#Social support: the perceived social support (ability to count on others) in the country
+#Freedom to make life choices: the perceived freedom to make life choices in the country.
+#Generosity: the perceived generosity of people in the country.
+#Perceptions of corruption: the perceived level of corruption in the government and business sectors #of the country.
+
+happiness <- read.csv("World Happiness Report 2005-2021.csv")
+
+happiness |>  #166 different countries
+  group_by(country = Country.name) |>
+  count()
+
+describe(happiness) #Confidence.in.national.government missing 216 obs, and Perceptions.of.corruption missing 113 obs, removed in lm() call
+
+scatterplotMatrix(happiness[, c(2,4:12)]) #Some variables show patterns of interaction 
+
+timeladder <- lm(Life.Ladder~Year+Log.GDP.per.capita+Social.support+Healthy.life.expectancy.at.birth+Freedom.to.make.life.choices+Generosity+Perceptions.of.corruption+Positive.affect+Negative.affect+Confidence.in.national.government,data=happiness) #Negative affect not significant after other predictors already baked in, R Squared = 0.787, F-statistic 641.1 on 10 and 1736 DF with P-value < 2.2e-16
+
+summary(timeladder)
+
+qqnorm(timeladder$residuals) #Plots raw residuals against theoretical normal distribution
+
+residualPlot(timeladder) #Plots standardized residuals ([y - y_hat] / sqrt(Var)) against fitted
+
+X <- model.matrix(timeladder)
+cor(X) #Checks correlations between predictors, hinting that there may be significant interactions between Log.GDP.per.capita and Social.support (0.703) and Healthy.life.expectancy.at.birth (0.829), Social.support and Healthy.life.expectancy.at.birth (0.611), Freedom.to.make.life.choices and Positive.affect (0.578)
+
+# ^ Possible starting point for multi-collinearity investigation
+
+XnoNAs <- X[-1, -1]
+as.data.frame(cor(XnoNAs)) |>
+  summarise(across(everything(), mean)) #Taking out the NAs (intercept from the X matrix) and averaging across predictor correlations, we find that Freedom.to.make.life.choices has the highest average correlation, followed by Healthy.life.expectancy.at.birth, Social.support, then Log.GDP.per.capita.
+
+#H <- X %*% solve(t(X) %*% X) %*% t(X) # Hat matrix but too large, Ignore
+
+leverage_values <- hatvalues(timeladder)
+    
+plot(leverage_values, type = "h", main = "Leverage Values",
+     xlab = "Observation Index", ylab = "Leverage")
+abline(h = 2 * mean(leverage_values), col = "red", lty = 2) #Add a reference line for high leverage
+
+plot(timeladder, which = 5) #Residuals vs Leverage plot
+```
+```{r Prediction Plots}
+na.omit(happiness) |>
+  ggplot(aes(x = predict(timeladder), y = Life.Ladder)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1) +
+  labs(x = 'Predicted Values', y = 'Actual Values')
+```
+
+```{r OLS model building}
+#OLS Steps with AIC criteria
+
+ols_step_forward_aic(timeladder, details = TRUE) #Removes Negative.affect
+
+ols_step_backward_aic(timeladder, details = TRUE) #Removes Negative.affect as well
+
+ols_step_both_aic(timeladder, details = TRUE) #Also removes Negative.affect
+
+```
+
