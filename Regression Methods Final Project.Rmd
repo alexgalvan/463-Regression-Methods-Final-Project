@@ -1,13 +1,12 @@
 ---
-title: "happiness index starter"
-author: "Alexander Galvan, Calvin Peloso"
+title: "Regression Methods Final Project"
+author: "Alexander Galvan, Calvin Peloso, Josef Ulman"
 date: "2025-11-20"
-output: html_document
+output: pdf_document
 ---
 
 ```{r Setup}
-library(dplyr)
-library(ggplot2)
+library(tidyverse)
 library(olsrr)
 library(car)
 library(psych)
@@ -123,8 +122,74 @@ ols_plot_resid_fit(timeladder_reduced)
 plot(timeladder_reduced, which = 5) 
 ```
 
+```{r k-fold cross validation}
+library(caret)
 
-```{r Potential LASSO from base}
+train_control <- trainControl(method = "cv", number = 10)
+
+# Train a model 
+model <- train(
+  Life.Ladder~Log.GDP.per.capita+Social.support+Healthy.life.expectancy.at.birth+Perceptions.of.corruption+Positive.affect+Confidence.in.national.government, 
+  data = happiness,
+  method = "lm",
+  trControl = train_control
+)
+# displaying k fold parameters
+model
+model$metric
+
+# normalizing k fold parameters to our data range
+lifeladder_range <- max(happiness$Life.Ladder) -  min(happiness$Life.Ladder)
+lifeladder_range
+
+mean(model$resample$RMSE)/lifeladder_range
+mean(model$resample$MAE)/lifeladder_range
 
 ```
 
+```{r}
+haporig <- read.csv("World Happiness Report 2005-2021.csv")
+excluded <- haporig %>% filter(Country.name %in% setdiff(unique(haporig$Country.name),unique(happiness$Country.name)))
+excluded %>% group_by(Country.name) %>% summarise(Generosity.=sum(is.na(Generosity)),Life.Expectancy=sum(is.na(Healthy.life.expectancy.at.birth)),Corruption=sum(is.na(Perceptions.of.corruption)),Confidence=sum(is.na(Confidence.in.national.government)),Total.obs=n())
+```
+
+
+```{r}
+# Overall correlation between happiness and Confidence
+cor(happiness$Confidence.in.national.government,happiness$Life.Ladder)
+```
+
+
+```{r}
+timeladder <- lm(Life.Ladder~Year+Log.GDP.per.capita+Social.support+Healthy.life.expectancy.at.birth+Freedom.to.make.life.choices+Generosity+Perceptions.of.corruption+Positive.affect+Negative.affect+Confidence.in.national.government,data=happiness)
+timeladder_reduced <- lm(Life.Ladder~Log.GDP.per.capita+Social.support+Healthy.life.expectancy.at.birth+Perceptions.of.corruption+Positive.affect+Confidence.in.national.government,data=happiness)
+```
+
+
+```{r}
+#Maximum vs minimum residual of countries
+residualminmax <- happiness %>% select(Country.name,Year,Log.GDP.per.capita,Social.support,Healthy.life.expectancy.at.birth,Perceptions.of.corruption,Positive.affect,Confidence.in.national.government) %>% mutate(Residual=timeladder_reduced$residuals) %>% select(Year,Residual,Country.name) %>% group_by(Country.name) %>% filter(Residual == min(Residual) | Residual == max(Residual)) %>% mutate(minormax=ifelse(Residual == max(Residual),"max","min")) %>% pivot_wider(names_from=c(minormax),values_from = c(Year,Residual)) %>% filter(!is.na(Residual_min))
+ggplot(residualminmax,aes(x=Residual_min,y=Residual_max)) + geom_point()
+```
+
+```{r}
+#Correlation for partial model
+with(residualminmax,cor(Residual_min,Residual_max))
+```
+
+
+
+```{r}
+# Correlation for full model
+happiness %>% select(Country.name,Year,Log.GDP.per.capita,Social.support,Healthy.life.expectancy.at.birth,Perceptions.of.corruption,Positive.affect,Confidence.in.national.government) %>% mutate(Residual=timeladder$residuals) %>% select(Year,Residual,Country.name) %>% group_by(Country.name) %>% filter(Residual == min(Residual) | Residual == max(Residual)) %>% mutate(minormax=ifelse(Residual == max(Residual),"max","min")) %>% pivot_wider(names_from=c(minormax),values_from = c(Year,Residual)) %>% filter(!is.na(Residual_min)) %>% with(cor(Residual_min,Residual_max))
+```
+
+```{r negative emotion vs life ladder}
+model2 <- lm(Life.Ladder ~ Negative.affect, data = happiness)
+summary(model2)
+```
+
+```{r confidance in govenrmant vs life ladder}
+model3 <- lm(Life.Ladder ~ Confidence.in.national.government, data = happiness)
+summary(model3)
+```
